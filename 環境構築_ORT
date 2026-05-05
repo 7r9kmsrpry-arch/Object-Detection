@@ -1,0 +1,11 @@
+conda create -n fastbev_ros_py310 python=3.10 -y
+conda activate fastbev_ros_py310
+pip install onnxruntime-gpu==1.22.0
+pip install jupyter notebook
+pip install torch
+pip install opencv-python
+pip install Pillow
+pip install pyquaternion
+pip install nuscenes-devkit
+pip install matplotlib
+
