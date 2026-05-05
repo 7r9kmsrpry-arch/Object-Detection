@@ -1,0 +1,500 @@
+import time
+import copy
+
+import torch
+from mmdet.models import DETECTORS
+from mmdet3d.core import bbox3d2result
+from mmcv.runner import force_fp32, auto_fp16
+from scipy.optimize import linear_sum_assignment
+from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
+
+from projects.mmdet3d_plugin.models.utils.grid_mask import GridMask
+from projects.mmdet3d_plugin.VAD.planner.metric_stp3 import PlanningMetric
+
+# 追加
+# from mmdet3d.models import build_model, build_backbone
+from projects.mmdet3d_plugin.models.encoders import build_bev_encoder
+import time
+
+# VADのクラス定義
+@DETECTORS.register_module() # MMDetection3Dのレジストリに"VAD"を登録(configでtype='VAD'と書くとこのクラスが選ばれる)
+class VAD(MVXTwoStageDetector): # 画像系＆ポイント系の両方を扱えるベース検出器を継承(MMDet3Dの標準)
+    """VAD model.
+    """
+    def __init__(self,
+                 use_grid_mask=False,     # Gridマスクのオーグメンテーション設定(configでTrue)
+                 pts_voxel_layer=None,    # 点群系はNone(親クラスがLiDARも扱う)
+                 pts_voxel_encoder=None,  # 点群系はNone(親クラスがLiDARも扱う)
+                 pts_middle_encoder=None, # 点群系はNone(親クラスがLiDARも扱う)
+                 pts_fusion_layer=None,   # 点群系はNone(親クラスがLiDARも扱う)
+                 img_backbone=None,       # configでResNetを定義
+                 pts_backbone=None,       # 点群系はNone(親クラスがLiDARも扱う)
+                 img_neck=None,           # configでFPNを定義
+                 pts_neck=None,           # 点群系はNone(親クラスがLiDARも扱う)
+                 pts_bbox_head=None,      # configでVADHead(物体検出+Map検出+軌道予測+プランニング)を定義
+                 img_roi_head=None,       # None
+                 img_rpn_head=None,       # None
+                 train_cfg=None,          # 訓練時の設定
+                 test_cfg=None,           # テスト時の設定
+                 pretrained=None,         # configでtorchvision://resnet50を設定
+                 video_test_mode=False,   # 時系列テスト最適化(configでTrue設定)
+                 ):
+
+        # VADの親クラスの.__init__の呼び出し(引数のVAD, selfは、普通省略する)
+        super(VAD, self).__init__(pts_voxel_layer, pts_voxel_encoder,
+                                  pts_middle_encoder, pts_fusion_layer,
+                                  img_backbone, pts_backbone, img_neck, pts_neck,
+                                  pts_bbox_head, img_roi_head, img_rpn_head,
+                                  train_cfg, test_cfg, pretrained)
+
+        # 学習時のGridオーグメンテーションの設定
+        self.grid_mask = GridMask(True, True, rotate=1, offset=False, ratio=0.5, mode=1, prob=0.7)
+        self.use_grid_mask = use_grid_mask
+        
+        # 自動半制度のフラグ(OFF)
+        self.fp16_enabled = False
+        
+        # temporal fusion時の設定
+        self.video_test_mode = video_test_mode # 時系列フレームでBEVを強化
+        self.prev_frame_info = { # 前回フレームの情報
+            'prev_bev': None,    # 前回フレームのBEV
+            'scene_token': None, # 前回フレームのシーントークン
+            'prev_pos': 0,       # 前回フレームの自車位置
+            'prev_angle': 0,     # 前回フレームのヨー角
+        }
+        
+        # debug用
+        self.debug = False 
+        self.cnt   = 0
+        self.forward_time  = 0.0
+        self.extract_img_feat_time = 0.0
+
+    # 画像特徴量の抽出
+    def extract_img_feat(self, 
+                         img,           # 画像[(queue_length), Ncams, C, H, W]
+                         img_metas,       # 画像のメタ情報
+                         len_queue=None): # 時系列の長さ
+        """Extract features of images."""
+
+        B = img.size(0) # 画像のバッチ数(時系列の枚数)
+        if img is not None:
+            # 画像の形状の整形(backboneは[B,C,H,W]を想定)
+            if img.dim() == 5 and img.size(0) == 1:  # [B,N,C,H,W] & B=1の時
+                img.squeeze_()                       # [N,C,H,W]として、N(カメラ台数)をバッチとして扱う
+            elif img.dim() == 5 and img.size(0) > 1: 
+                B, N, C, H, W = img.size()
+                img = img.reshape(B * N, C, H, W) # 時系列✕カメラ台数を1つのバッチとする
+                
+            # グリッドマスクの設定(学習時のオーグメンテーション)
+            if self.use_grid_mask:
+                img = self.grid_mask(img)
+        else:
+            return None
+
+        # 画像特徴量の取得(Backboneの出力はFPNレベルごとのlistかdict)
+        img_feats = self.img_backbone(img) # listの場合、[b', Cℓ, Hℓ, Wℓ]が複数。dictの場合、キーがステージ名
+        if isinstance(img_feats, dict):
+            img_feats = list(img_feats.values())
+        if self.with_img_neck:
+            img_feats = self.img_neck(img_feats) # FPNのマルチ特徴へ変換(全スケールのCを合わせる)
+
+        # マルチレベルの特徴マップのreshape(#[時系列、N、C、H、W]に変換)
+        img_feats_reshaped = []
+        for img_feat in img_feats:
+            BN, C, H, W = img_feat.size() # 各スケールの特徴マップの形状を取得
+            if len_queue is not None: # 訓練時(obtain_history_bevのみ)
+                img_feats_reshaped.append(img_feat.view(int(B/len_queue), # 真のバッチサイズ (bs)
+                                                        len_queue,        # 時系列長 (T)
+                                                        int(BN / B),      # カメラ枚数 (N_cam)
+                                                        C, H, W)) 
+            else: # 推論時
+                img_feats_reshaped.append(img_feat.view(B,                # 真のバッチサイズ (bs)
+                                                        int(BN / B),      # カメラ枚数 (N_cam)
+                                                        C, H, W))
+        return img_feats_reshaped # マルチスケールの特徴マップ
+
+    # 特徴抽出のAPI関数
+    @auto_fp16(apply_to=('img'), out_fp32=True) # 入力の画像を16に自動で落として、出力はfp32に戻す
+    def extract_feat(self, img, img_metas=None, len_queue=None):
+        """Extract features from images and points."""
+
+        img_feats = self.extract_img_feat(img, img_metas, len_queue=len_queue)
+        
+        return img_feats
+
+    # 訓練の実行コード
+    def forward_pts_train(self,
+                          pts_feats,
+                          gt_bboxes_3d,
+                          gt_labels_3d,                      
+                          img_metas,
+                          gt_bboxes_ignore=None,
+                          prev_bev=None):
+        """Forward function'
+        Args:
+            pts_feats (list[torch.Tensor]): Features of point cloud branch
+            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth
+                boxes for each sample.
+            gt_labels_3d (list[torch.Tensor]): Ground truth labels for
+                boxes of each sampole
+            img_metas (list[dict]): Meta information of samples.
+            gt_bboxes_ignore (list[torch.Tensor], optional): Ground truth
+                boxes to be ignored. Defaults to None.
+            prev_bev (torch.Tensor, optional): BEV features of previous frame.
+        Returns:
+            dict: Losses of each branch.
+        """
+        # 認識処理の実行        
+        outs = self.pts_bbox_head(pts_feats, img_metas, prev_bev)
+        
+        # 損失計算の対象
+        loss_inputs = [
+            gt_bboxes_3d,  # 物体の位置ラベル
+            gt_labels_3d,  # 物体のクラスラベル
+            outs,          # 予測結果
+        ]
+        
+        # 損失計算
+        losses = self.pts_bbox_head.loss(*loss_inputs, img_metas=img_metas)
+
+        return losses
+
+    # FLOPsを計測するための関数(処理がどれだけ軽くなったかなどを比較できる)
+    def forward_dummy(self, img):
+        dummy_metas = None
+        return self.forward_test(img=img, img_metas=[[dummy_metas]])
+
+    # 順伝播
+    def forward(self, return_loss=True, **kwargs):
+        """Calls either forward_train or forward_test depending on whether
+        return_loss=True.
+        Note this setting will change the expected inputs. When
+        `return_loss=True`, img and img_metas are single-nested (i.e.
+        torch.Tensor and list[dict]), and when `resturn_loss=False`, img and
+        img_metas should be double nested (i.e.  list[torch.Tensor],
+        list[list[dict]]), with the outer list indicating test time
+        augmentations.
+        """
+        if return_loss:
+            return self.forward_train(**kwargs)
+        else:
+            return self.forward_test(**kwargs)
+    
+    # 履歴フレーム(現在-1フレーム以前)のBEVを統合(2D特徴抽出⇒BEVを毎フレーム履歴分だけ実施) ここ変更必要！
+    def obtain_history_bev(self, imgs_queue, img_metas_list):
+        """Obtain history BEV features iteratively. To save GPU memory, gradients are not calculated.
+        """
+        self.eval() # 学習の前段“仕込み”として、履歴分は勾配なし＆evalモードで計算してGPUメモリを節約
+
+        with torch.no_grad():
+            prev_bev = None
+            # 入力の形状を確認 → まとめて特徴抽出
+            bs, len_queue, num_cams, C, H, W = imgs_queue.shape # 画像の形状取得(image_queue=履歴+現在のフレーム)
+            imgs_queue = imgs_queue.reshape(bs*len_queue, num_cams, C, H, W) # extract_featに対応した形式に変更([B, T-1, …] → [B*(T-1), …] に平坦化)
+            img_feats_list = self.extract_feat(img=imgs_queue, len_queue=len_queue) # 全バッチ・時刻の画像特徴を抽出
+            
+            # 時刻ごとにBEVを更新（時間方向に逐次融合）
+            for i in range(len_queue):
+                img_metas = [each[i] for each in img_metas_list] # 全バッチの時刻iの画像のメタ情報を取得
+                # img_feats = self.extract_feat(img=img, img_metas=img_metas)
+                img_feats = [each_scale[:, i] for each_scale in img_feats_list] # 各時刻の画像特徴量(img_feats_listはマルチスケールの特徴のリスト想定)
+                prev_bev = self.pts_bbox_head(img_feats, img_metas, prev_bev, only_bev=True) # 1時刻分ごとにBEVを結合
+            self.train() # 学習モードに移行
+            return prev_bev # 時刻結合されたBEV
+
+    # 時系列の学習
+    # @auto_fp16(apply_to=('img', 'points'))
+    @force_fp32(apply_to=('img','points','prev_bev'))
+    def forward_train(self,
+                      points=None,
+                      img_metas=None,
+                      gt_bboxes_3d=None,
+                      gt_labels_3d=None,
+                      gt_labels=None,
+                      gt_bboxes=None,
+                      img=None,                   # マルチフレーム画像入力（履歴＋現在）[B, T, C, H, W]
+                      proposals=None,             # R-CNN系を使う場合の領域提案
+                      gt_bboxes_ignore=None, # 損失計算時の無視クラスリスト
+                      img_depth=None,
+                      img_mask=None,
+                      **kwargs):
+        """Forward training function.
+        Args:
+            points (list[torch.Tensor], optional): Points of each sample.
+                Defaults to None.
+            img_metas (list[dict], optional): Meta information of each sample.
+                Defaults to None.
+            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`], optional):
+                Ground truth 3D boxes. Defaults to None.
+            gt_labels_3d (list[torch.Tensor], optional): Ground truth labels
+                of 3D boxes. Defaults to None.
+            gt_labels (list[torch.Tensor], optional): Ground truth labels
+                of 2D boxes in images. Defaults to None.
+            gt_bboxes (list[torch.Tensor], optional): Ground truth 2D boxes in
+                images. Defaults to None.
+            img (torch.Tensor optional): Images of each sample with shape
+                (N, C, H, W). Defaults to None.
+            proposals ([list[torch.Tensor], optional): Predicted proposals
+                used for training Fast RCNN. Defaults to None.
+            gt_bboxes_ignore (list[torch.Tensor], optional): Ground truth
+                2D boxes in images to be ignored. Defaults to None.
+        Returns:
+            dict: Losses of different branches.
+        """
+        # 履歴フレーム数を取得
+        len_queue = img.size(1)     # 履歴フレームの数(過去3フレーム＋現在1フレームならlen_queue=4)
+
+        # 最新フレームと履歴フレームを分割
+        prev_img = img[:, :-1, ...] # 履歴フレーム
+        img = img[:, -1, ...]       # 最新フレーム
+
+        # メタ情報をコピー
+        prev_img_metas = copy.deepcopy(img_metas) # 画像のメタ情報のディープコピー
+        
+        # 履歴フレームを時間融合したBEVを生成
+        prev_bev = self.obtain_history_bev(prev_img, prev_img_metas) if len_queue > 1 else None
+
+        # 最新時刻の処理
+        img_metas = [each[len_queue-1] for each in img_metas] # 最新時刻のメタデータ取得
+        img_feats = self.extract_feat(img=img, img_metas=img_metas) # 画像特徴取得
+        
+        # 損失計算
+        losses = dict()
+        losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d, gt_labels_3d,img_metas, gt_bboxes_ignore, prev_bev)
+        losses.update(losses_pts) # 損失の更新
+        return losses
+
+    # テスト時の推論
+    def forward_test(
+        self,
+        img_metas, # 画像や幾何行列など“各フレームのメタ情報”（[B][T] 構造のリスト）
+        gt_bboxes_3d,
+        gt_labels_3d,
+        img=None, # 画像テンソル（通常は [B, T, Ncams, C, H, W] か、MMDet流儀での“リスト包み”）
+        **kwargs
+    ):
+        if self.debug:
+            self.cnt += 1
+            t0 = time.time()
+
+        # 入力の確認
+        for var, name in [(img_metas, 'img_metas')]: # 将来的な拡張用に、この書き方してる('img_metas'は内容がわかるようにしてるだけ)
+            if not isinstance(var, list):
+                raise TypeError('{} must be a list, but got {}'.format(
+                    name, type(var)))
+        img = [img] if img is None else img # imgはリストで統一(MMDet系の慣習)
+
+        # シーン跨ぎの確認
+        if img_metas[0][0]['scene_token'] != self.prev_frame_info['scene_token']:
+            # the first sample of each scene is truncated
+            self.prev_frame_info['prev_bev'] = None
+        # update idx
+        self.prev_frame_info['scene_token'] = img_metas[0][0]['scene_token']
+
+        # temporal fusionを使用しない場合、prev_bevは常にNone
+        if not self.video_test_mode:
+            self.prev_frame_info['prev_bev'] = None
+
+        # 前回フレームからの位置(x,y,z)と角度(yaw)の差分を取得
+        tmp_pos = copy.deepcopy(img_metas[0][0]['can_bus'][:3])   # 現在位置(x,y,z)
+        tmp_angle = copy.deepcopy(img_metas[0][0]['can_bus'][-1]) # 現在の角度(yaw)
+        # 位置と角度の差分に変換
+        if self.prev_frame_info['prev_bev'] is not None:
+            img_metas[0][0]['can_bus'][:3] -= self.prev_frame_info['prev_pos']   # Δx, Δy, Δz
+            img_metas[0][0]['can_bus'][-1] -= self.prev_frame_info['prev_angle'] # Δyaw
+        else: # 履歴なしなので、変化量は0にセット
+            img_metas[0][0]['can_bus'][-1] = 0
+            img_metas[0][0]['can_bus'][:3] = 0
+        
+        # 推論の実施(今フレームのBEVの取得+検知)
+        new_prev_bev, bbox_results = self.simple_test(
+            img_metas=img_metas[0], 
+            img=img[0],
+            prev_bev=self.prev_frame_info['prev_bev'],
+            gt_bboxes_3d=gt_bboxes_3d,
+            gt_labels_3d=gt_labels_3d,
+            **kwargs
+        )
+
+        # 今フレームのBEV特徴量と車両情報を保存
+        # During inference, we save the BEV features and ego motion of each timestamp.
+        self.prev_frame_info['prev_pos'] = tmp_pos
+        self.prev_frame_info['prev_angle'] = tmp_angle
+        self.prev_frame_info['prev_bev'] = new_prev_bev
+
+        # debug(時間計測用)
+        if self.debug:
+           t1 = time.time()
+           self.forward_time += (t1 - t0)*1000
+           if self.cnt == 100:
+                print(f"forward time: {(self.forward_time)/self.cnt:.2f} ms")
+        
+        return bbox_results
+
+    def simple_test(
+        self,
+        img_metas,    # 画像や幾何行列など“各フレームのメタ情報”（[T] 構造のリスト）
+        gt_bboxes_3d,
+        gt_labels_3d,
+        img=None,     # 画像テンソル（通常は [T, Ncams, C, H, W] か、MMDet流儀での“リスト包み”）
+        prev_bev=None,
+        points=None,
+        rescale=False,
+        **kwargs
+    ):
+        """Test function without augmentaiton."""
+        bbox_list = [dict() for i in range(len(img_metas))]
+
+        # debug(時間計測用)
+        if self.debug:
+            t0 = time.time()
+        
+        # 特徴量の抽出
+        img_feats = self.extract_feat(img=img, img_metas=img_metas)
+
+        # debug(時間計測用)
+        if self.debug:
+           t1 = time.time()
+           self.extract_img_feat_time += ((t1 - t0)*1000)
+           if self.cnt == 100:
+                print(f"extract img feat time: {(self.extract_img_feat_time)/self.cnt:.2f} ms")
+
+        # １サンプル分の物体検出を実行&評価
+        #new_prev_bev, bbox_pts, metric_dict = self.simple_test_pts(
+        new_prev_bev, bbox_pts = self.simple_test_pts(
+            img_feats,
+            img_metas,
+            gt_bboxes_3d,
+            gt_labels_3d,
+            prev_bev,
+            rescale=rescale,
+        )
+
+        # bboxと評価指標を取得
+        for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
+            result_dict['pts_bbox'] = pts_bbox
+            #result_dict['metric_results'] = metric_dict
+
+        return new_prev_bev, bbox_list
+
+    # １サンプル分の物体検出を実行&評価
+    def simple_test_pts(
+        self,
+        x,         # 画像特徴量([T、N、C、H、W])
+        img_metas, # 画像や幾何行列など“各フレームのメタ情報”（[T] 構造のリスト）
+        gt_bboxes_3d,
+        gt_labels_3d,
+        prev_bev=None, # 前回のBEV特徴マップ
+        rescale=False,
+    ):
+        """Test function"""
+
+        # 認識対象のクラス名を定義
+        mapped_class_names = [
+            'car', 'truck', 'construction_vehicle', 'bus',
+            'trailer', 'barrier', 'motorcycle', 'bicycle', 
+            'pedestrian', 'traffic_cone'
+        ]
+
+        # 予測処理
+        outs = self.pts_bbox_head(x, img_metas, prev_bev=prev_bev, test_mode=False) 
+
+        # 特徴量をbboxに変換
+        bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas, rescale=rescale)
+
+        # 結果の整形と格納
+        bbox_results = []
+        #for i, (bboxes, scores, labels, trajs) in enumerate(bbox_list):
+        for i, (bboxes, scores, labels) in enumerate(bbox_list):
+            bbox_result = bbox3d2result(bboxes, scores, labels)
+            # bbox_result['trajs_3d'] = trajs.cpu()
+            bbox_results.append(bbox_result)
+
+        # 推論は1バッチ前提
+        assert len(bbox_results) == 1, 'only support batch_size=1 now'
+
+        # スコア閾値で検出結果をフィルタリング
+        score_threshold = 0.6
+        with torch.no_grad():
+            c_bbox_results = copy.deepcopy(bbox_results)
+            bbox_result = c_bbox_results[0]
+            gt_bbox = gt_bboxes_3d[0][0]
+            gt_label = gt_labels_3d[0][0].to('cpu')
+
+            # filter pred bbox by score_threshold
+            mask = bbox_result['scores_3d'] > score_threshold
+
+            bbox_result['boxes_3d']  = bbox_result['boxes_3d'][mask]
+            bbox_result['scores_3d'] = bbox_result['scores_3d'][mask]
+            bbox_result['labels_3d'] = bbox_result['labels_3d'][mask]
+
+            # 物体検出結果とGTの対応付け
+            matched_bbox_result = self.assign_pred_to_gt_vip3d(bbox_result, gt_bbox, gt_label)
+
+        return outs['bev_embed'], bbox_results #metric_dict
+
+    # 予測ボックスをGTボックスへ1対1対応付け
+    def assign_pred_to_gt_vip3d(
+        self,
+        bbox_result,         # 物体検出とmotion検出の結果
+        gt_bbox,             # bboxの正解値
+        gt_label,            # bboxの正解ラベル
+        match_dis_thresh=2.0 # GTと予測の割当の閾値
+    ):
+        """Assign pred boxs to gt boxs according to object center preds in lcf.
+        Args:
+            bbox_result (dict): Predictions.
+                'boxes_3d': (LiDARInstance3DBoxes)
+                'scores_3d': (Tensor), [num_pred_bbox]
+                'labels_3d': (Tensor), [num_pred_bbox]
+                'trajs_3d': (Tensor), [fut_ts*2]
+            gt_bboxs (LiDARInstance3DBoxes): GT Bboxs.
+            gt_label (Tensor): GT labels for gt_bbox, [num_gt_bbox].
+            match_dis_thresh (float): dis thresh for determine a positive sample for a gt bbox.
+
+        Returns:
+            matched_bbox_result (np.array): assigned pred index for each gt box [num_gt_bbox].
+        """     
+        # 動的クラスの選別(10クラスから移動物のみ抽出)
+        dynamic_list = [0,1,3,4,6,7,8]
+
+        # 出力形式の用意
+        matched_bbox_result = torch.ones((len(gt_bbox)), dtype=torch.long) * -1  # -1: not assigned 初期値：-1(未割り当て)
+
+        # 中心点の抽出と距離行列
+        gt_centers = gt_bbox.center[:, :2]                   # GTの中心点   [G, 2]
+        pred_centers = bbox_result['boxes_3d'].center[:, :2] # 予測の中心点 [P, 2]
+        dist = torch.linalg.norm(pred_centers[:, None, :] - gt_centers[None, :, :], dim=-1) # 2次元（x,y）のユークリッド距離で、予測P × GTG の距離行列を作る
+                                                                                            # [P, G, 2]（全ペアの(x,y)差）を計算 
+                                                                                            # torch.linalg.norm(..., dim=-1) は最後の次元（2次元）で ユークリッド距離を取る
+                                                                                            # dist の形状は [P, G]（各予測と各GTの距離行列）P行の予測に対するG列の正解へのユークリッド距離
+
+        # 動的でない行・列をマスク(距離を大きくしてマッチングしないようにしてる)
+        pred_not_dyn = [label not in dynamic_list for label in bbox_result['labels_3d']] # 長さPのboolリスト
+        gt_not_dyn = [label not in dynamic_list for label in gt_label]                   # 長さGのboolリスト
+        dist[pred_not_dyn] = 1e6  # 行方向（予測側）でTrueの行（= 静的な予測）を丸ごと1e6(dist[pred_not_dyn, :]と同じ)
+        dist[:, gt_not_dyn] = 1e6 # 列方向（GT側）でTrueの列（= 静的なGT）を丸ごと1e6
+
+        # 距離しきい値でのフィルタ(2.0mより離れているペアもマッチ不可にする)
+        dist[dist > match_dis_thresh] = 1e6 # dist > match_dis_thresh は形状 [P, G] の boolマスク（要素ごとに判定） 要素単位の操作で、行全体／列全体ではない点がポイント
+
+        # ハンガリアンマッチング(総距離が最小になるように、予測とGTの1対1対応を一括で最適化)
+        # dist に 1e6 が入っているペアは、基本的に選ばれない
+        r_list, c_list = linear_sum_assignment(dist) # r_list: 選ばれた行インデックス（予測側), c_list: 対応する列インデックス（GT側）
+
+        # 距離閾値を再確認して、出力用の対応表を作成
+        # 万一ハンガリアンで選ばれても、距離が 2.0 m を超えていたら弾く（= -1のまま）
+        # GT側インデックス（列）に対して、対応する予測インデックス（行）を格納
+        for i in range(len(r_list)):
+            if dist[r_list[i], c_list[i]] <= match_dis_thresh:
+                matched_bbox_result[c_list[i]] = r_list[i]
+
+        return matched_bbox_result
+
+    # エポック数の設定(学習時に、VAD/hooks/custom_hooks.pyから呼ばれる)
+    def set_epoch(self, epoch): 
+        self.pts_bbox_head.epoch = epoch
+
+
+
+

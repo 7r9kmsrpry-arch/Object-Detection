@@ -1,0 +1,89 @@
+1. pklの作成部分
+・/home/kenta/fastbev/tools/create_data_bevdet.py
+・/home/kenta/fastbev/tools/data_converter/nuscenes_converter.py
+・/home/kenta/fastbev/tools/data_converter/create_gt_database.py
+
+2. config系
+・/home/kenta/fastbev/configs/fastbev/paper/fastbev-r50-cbgs-4d-custom.py
+・/home/kenta/fastbev/configs/_base_/datasets/nus-3d.py
+・/home/kenta/fastbev/configs/_base_/default_runtime.py
+
+3. testの実行
+・/home/kenta/fastbev/tools/test.py
+
+3. データセットの理解
+・/home/kenta/fastbev/mmdet3d/datasets/builder.py
+・/home/kenta/miniconda3/envs/fastbev/lib/python3.8/site-packages/mmcv/utils/registry.py
+・/home/kenta/fastbev/mmdet3d/datasets/dataset_wrappers.py
+・/home/kenta/fastbev/mmdet3d/datasets/nuscenes_dataset.py (_format_bbox) # img_inputs
+・/home/kenta/fastbev/mmdet3d/datasets/custom_3d.py (prepipeline)
+・/home/kenta/fastbev/mmdet3d/datasets/pipelines/transforms_3d.py (ToEgo)
+・/home/kenta/fastbev/mmdet3d/datasets/pipelines/test_time_aug.py (MultiScaleFlipAug3D)
+・/home/kenta/fastbev/mmdet3d/datasets/pipelines/formating.py (DefaultFormatBundle3D, Collect3D) # img_metas
+・/home/kenta/miniconda3/envs/fastbev/lib/python3.8/site-packages/mmcv/parallel/data_container.py (DataContainer)
+
+4. 入力前処理
+・/home/kenta/fastbev/mmdet3d/datasets/pipelines/loading.py
+→mmlabNormalizeはto_rgbがTrueでよいの？
+・/home/kenta/miniconda3/envs/fastbev/lib/python3.8/site-packages/mmdet/datasets/builder.py (build_dataloader)
+・/home/kenta/miniconda3/envs/fastbev/lib/python3.8/site-packages/mmcv/parallel/collate.py (collate) ← 1バッチにデータをうまいことまとめてくれてる
+
+5. モデル本体
+・/home/kenta/fastbev/mmdet3d/models/detectors/fastbev.py
+・/home/kenta/fastbev/mmdet3d/models/necks/fastray_transformer.py
+
+6. bboxのデコーダー
+・
+・/home/kenta/fastbev/mmdet3d/models/detectors/centerpoint.py (simple_test_pts)
+・/home/kenta/fastbev/projects/mmdet3d_plugin/core/bbox/coders/fut_nms_free_coder.py (CustomNMSFreeCoder)
+・/home/kenta/fastbev/projects/mmdet3d_plugin/core/bbox/util.py
+
+7. vis
+・/home/kenta/fastbev/tools/analysis_tools/vis.py
+・/home/kenta/fastbev/mmdet3d/core/bbox/structures/base_box3d.py
+・/home/kenta/fastbev/mmdet3d/core/bbox/structures/lidar_box3d.py
+・
+
+
+10. 今後の確認項目
+・x,y,zの軸の向き
+・transporseしてるけど、headはそれで良いの？
+・深度のbinの範囲も広げないと、今後認識できなくなる。(fastrayのget_inputで弾かれる)
+・bboxの各クエリから重複も許してクラス確率がtopk(100)個のボックスをデコーダーで抽出しているので、同じbboxが重複する場合がある。
+  各クエリに対して最大確率のクラスだけを残して、top-kこ抽出する必要がある。(別件だが、クラス確率で間引くのも入れても良さそう)
+
+
+やること
+・gridを外部で作る
+・４Dのonnxが動くかどうかを確認する
+・C++で入力部分を作成する
+・C++でデコーダ部分を作成する
+・PYthonの出力と一致するかを確認する＆可視化する
+・ROSノード化
+・bboxはグローバル座標なの？
+・fastbevTRTのforwardをfastray_transformerベースにしたので、元のfastbevTRTとの差分を確認する(もしかしたら元のやつのほうが効率が良いのかも)
+
+・TensorRTでINT8を試してみる
+
+ソフト理解
+・use_depthはモデル自体とfastrayで2つある！
+→モデルがtrueの場合、学習に深度情報を使用する！
+
+
+11. model_deploy
+1. ONNXエクスポート
+・/home/kenta/fastbev/tools/convert_fastbev_to_TRT.py
+2. pklファイル→jsonに変換
+・tools/convert_pkl_to_json.ipynb
+3. 前処理設定のyamlファイル
+
+4. 後処理
+
+・debug追記
+・/home/kenta/fastbev/mmdet3d/models/necks/fastray_transformer.py
+
+
+・ONNX用に分岐追加
+・/home/kenta/fastbev/mmdet3d/models/VAD/modules/decoder.py
+・img_pipelineのcurrとprevの出力をリストに変更
+・onnx_input_builderにshift_featuresを追記
