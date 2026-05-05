@@ -1,0 +1,26 @@
+conda activate fastbev_ros_py310
+source /opt/ros/humble/setup.bash
+
+cd ~/ros2_ws
+colcon build --packages-select fastbev_ros --symlink-install
+
+source ~/ros2_ws/install/setup.bash
+
+
+sed -i '1c #!/home/kenta/miniconda3/envs/fastbev_ros_py310/bin/python' \
+  ~/ros2_ws/install/fastbev_ros/lib/fastbev_ros/data_node
+
+sed -i '1c #!/home/kenta/miniconda3/envs/fastbev_ros_py310/bin/python' \
+  ~/ros2_ws/install/fastbev_ros/lib/fastbev_ros/inference_node
+
+sed -i '1c #!/home/kenta/miniconda3/envs/fastbev_ros_py310/bin/python' \
+  ~/ros2_ws/install/fastbev_ros/lib/fastbev_ros/visualizer_node
+
+  head -1 ~/ros2_ws/install/fastbev_ros/lib/fastbev_ros/visualizer_node
+  #!/home/kenta/miniconda3/envs/fastbev_ros_py310/bin/python
+
+conda activate fastbev_ros_py310
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+
+ros2 run fastbev_ros data_node

@@ -1,0 +1,5 @@
+[console_scripts]
+data_node = fastbev_ros.data_node:main
+inference_node = fastbev_ros.inference_node:main
+visualizer_node = fastbev_ros.visualizer_node:main
+

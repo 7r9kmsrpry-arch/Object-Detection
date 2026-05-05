@@ -1,0 +1,15 @@
+running develop
+running egg_info
+writing fastbev_ros.egg-info/PKG-INFO
+writing dependency_links to fastbev_ros.egg-info/dependency_links.txt
+writing entry points to fastbev_ros.egg-info/entry_points.txt
+writing requirements to fastbev_ros.egg-info/requires.txt
+writing top-level names to fastbev_ros.egg-info/top_level.txt
+reading manifest file 'fastbev_ros.egg-info/SOURCES.txt'
+writing manifest file 'fastbev_ros.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev-ros.egg-link (link to .)
+Installing data_node script to /home/kenta/ros2_ws/install/fastbev_ros/lib/fastbev_ros
+
+Installed /home/kenta/ros2_ws/build/fastbev_ros
+running symlink_data

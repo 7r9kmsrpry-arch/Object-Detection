@@ -1,0 +1,43 @@
+[0.438s] Invoking command in '/home/kenta/ros2_ws/src/fastbev_ros': CONDA_PROMPT_MODIFIER=(fastbev_ros_py310) PYTHONPATH=/home/kenta/ros2_ws/build/fastbev_ros/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/fastbev_ros build --build-base /home/kenta/ros2_ws/build/fastbev_ros/build install --record /home/kenta/ros2_ws/build/fastbev_ros/install.log --single-version-externally-managed install_data
+[0.619s] running egg_info
+[0.619s] creating ../../build/fastbev_ros/fastbev_ros.egg-info
+[0.619s] writing ../../build/fastbev_ros/fastbev_ros.egg-info/PKG-INFO
+[0.619s] writing dependency_links to ../../build/fastbev_ros/fastbev_ros.egg-info/dependency_links.txt
+[0.620s] writing entry points to ../../build/fastbev_ros/fastbev_ros.egg-info/entry_points.txt
+[0.620s] writing requirements to ../../build/fastbev_ros/fastbev_ros.egg-info/requires.txt
+[0.620s] writing top-level names to ../../build/fastbev_ros/fastbev_ros.egg-info/top_level.txt
+[0.620s] writing manifest file '../../build/fastbev_ros/fastbev_ros.egg-info/SOURCES.txt'
+[0.621s] reading manifest file '../../build/fastbev_ros/fastbev_ros.egg-info/SOURCES.txt'
+[0.622s] writing manifest file '../../build/fastbev_ros/fastbev_ros.egg-info/SOURCES.txt'
+[0.622s] running build
+[0.622s] running build_py
+[0.622s] creating /home/kenta/ros2_ws/build/fastbev_ros/build
+[0.622s] creating /home/kenta/ros2_ws/build/fastbev_ros/build/lib
+[0.622s] creating /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros
+[0.622s] copying fastbev_ros/utils.py -> /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros
+[0.622s] copying fastbev_ros/nuscenes_sample_generator.py -> /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros
+[0.622s] copying fastbev_ros/__init__.py -> /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros
+[0.622s] copying fastbev_ros/data_node.py -> /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros
+[0.622s] running install
+[0.623s] running install_lib
+[0.623s] creating /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros
+[0.623s] copying /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros/utils.py -> /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros
+[0.623s] copying /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros/nuscenes_sample_generator.py -> /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros
+[0.623s] copying /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros/__init__.py -> /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros
+[0.624s] copying /home/kenta/ros2_ws/build/fastbev_ros/build/lib/fastbev_ros/data_node.py -> /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros
+[0.624s] byte-compiling /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros/utils.py to utils.cpython-310.pyc
+[0.625s] byte-compiling /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros/nuscenes_sample_generator.py to nuscenes_sample_generator.cpython-310.pyc
+[0.625s] byte-compiling /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros/__init__.py to __init__.cpython-310.pyc
+[0.625s] byte-compiling /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros/data_node.py to data_node.cpython-310.pyc
+[0.626s] running install_data
+[0.626s] creating /home/kenta/ros2_ws/install/fastbev_ros/share/ament_index
+[0.626s] creating /home/kenta/ros2_ws/install/fastbev_ros/share/ament_index/resource_index
+[0.626s] creating /home/kenta/ros2_ws/install/fastbev_ros/share/ament_index/resource_index/packages
+[0.626s] copying resource/fastbev_ros -> /home/kenta/ros2_ws/install/fastbev_ros/share/ament_index/resource_index/packages
+[0.626s] copying package.xml -> /home/kenta/ros2_ws/install/fastbev_ros/share/fastbev_ros
+[0.626s] running install_egg_info
+[0.627s] Copying ../../build/fastbev_ros/fastbev_ros.egg-info to /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev_ros-0.0.0-py3.10.egg-info
+[0.628s] running install_scripts
+[0.647s] Installing data_node script to /home/kenta/ros2_ws/install/fastbev_ros/lib/fastbev_ros
+[0.647s] writing list of installed files to '/home/kenta/ros2_ws/build/fastbev_ros/install.log'
+[0.665s] Invoked command in '/home/kenta/ros2_ws/src/fastbev_ros' returned '0': CONDA_PROMPT_MODIFIER=(fastbev_ros_py310) PYTHONPATH=/home/kenta/ros2_ws/build/fastbev_ros/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/fastbev_ros build --build-base /home/kenta/ros2_ws/build/fastbev_ros/build install --record /home/kenta/ros2_ws/build/fastbev_ros/install.log --single-version-externally-managed install_data
