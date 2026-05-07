@@ -1,0 +1,3 @@
+[console_scripts]
+fastbev = fastbev_ros.fastbev_node:main
+

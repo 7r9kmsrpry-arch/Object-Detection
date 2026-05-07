@@ -1,0 +1,70 @@
+# onnxモデルのパス
+model:
+  fastbev_onnx_path:   "../model_deploy/onnx/fastbev.onnx"
+  fastbev4d_onnx_path: "../model_deploy/onnx/fastbev4d.onnx"
+
+# 入力データ設定
+data_config:
+  cams: 
+    - CAM_FRONT_LEFT
+    - CAM_FRONT
+    - CAM_FRONT_RIGHT
+    - CAM_BACK_LEFT
+    - CAM_BACK
+    - CAM_BACK_RIGHT
+  Ncams: 6
+  input_size: [256, 704] # モデルへの入力画像サイズ
+  src_size: [900, 1600]  # 元の入力画像サイズ
+  num_frame: 2
+
+  # オーグメンテーション
+  resize: [-0.06, 0.11] # リサイズ(最小倍率, 最大倍率)
+  rot: [-5.4, 5.4]      # 回転(回転範囲)
+  flip: True            # 水平反転
+  crop_h: [0.0, 0.0]    # 高さ方向のクロップ量(実質なし)
+  resize_test: 0.00     # 推論時の追加リサイズ量(なし)
+
+geometry:
+  point_cloud_range: [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
+  voxel_size: [0.1, 0.1, 0.2]
+  grid_config:
+    x: [-51.2, 51.2, 0.8]
+    y: [-51.2, 51.2, 0.8]
+    z: [-2.5, 4.5, 1.0]
+    depth: [1.0, 60.0, 1.0]
+
+classes:
+  - car
+  - truck
+  - construction_vehicle
+  - bus
+  - trailer
+  - barrier
+  - motorcycle
+  - bicycle
+  - pedestrian
+  - traffic_cone
+
+pipeline:
+  sequential: true
+  normalize:
+    mean: [123.675, 116.28, 103.53]
+    std: [58.395, 57.12, 57.375]
+    to_rgb: true
+  bev_aug:
+    rot_lim: [-22.5, 22.5]
+    scale_lim: [0.95, 1.05]
+    flip_dx_ratio: 0.0
+    flip_dy_ratio: 0.0
+
+bbox_decoder:
+  post_center_range: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]  # 出力bboxの有効範囲(外は無視)
+  max_num: 100
+  num_classes: 10
+  score_threshold: 0.35
+
+visualizer:
+  save_path: ./vis
+  save_format: 'image'
+  save_prefix: 'result'
+  fps: 10

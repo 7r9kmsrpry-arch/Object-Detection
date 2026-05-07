@@ -1,0 +1,1 @@
+/home/kenta/ros2_ws/src/fastbev_ros/data/nuscenes/mini_vad_nuscenes_infos_temporal_train.pkl

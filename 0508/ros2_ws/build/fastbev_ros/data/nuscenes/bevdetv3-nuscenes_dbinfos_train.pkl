@@ -1,0 +1,1 @@
+/home/kenta/ros2_ws/src/fastbev_ros/data/nuscenes/bevdetv3-nuscenes_dbinfos_train.pkl

@@ -1,0 +1,9 @@
+source;share/fastbev_ros/hook/pythonpath.ps1
+source;share/fastbev_ros/hook/pythonpath.dsv
+source;share/fastbev_ros/hook/pythonpath.sh
+source;share/fastbev_ros/hook/ament_prefix_path.ps1
+source;share/fastbev_ros/hook/ament_prefix_path.dsv
+source;share/fastbev_ros/hook/ament_prefix_path.sh
+source;../../build/fastbev_ros/share/fastbev_ros/hook/pythonpath_develop.ps1
+source;../../build/fastbev_ros/share/fastbev_ros/hook/pythonpath_develop.dsv
+source;../../build/fastbev_ros/share/fastbev_ros/hook/pythonpath_develop.sh

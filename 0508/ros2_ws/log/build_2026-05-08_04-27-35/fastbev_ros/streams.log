@@ -1,0 +1,18 @@
+[0.456s] Invoking command in '/home/kenta/ros2_ws/build/fastbev_ros': CONDA_PROMPT_MODIFIER=(fastbev_ros_py310) PYTHONPATH=/home/kenta/ros2_ws/build/fastbev_ros/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/kenta/ros2_ws/build/fastbev_ros/build --no-deps symlink_data
+[0.652s] running develop
+[0.766s] running egg_info
+[0.766s] writing fastbev_ros.egg-info/PKG-INFO
+[0.766s] writing dependency_links to fastbev_ros.egg-info/dependency_links.txt
+[0.766s] writing entry points to fastbev_ros.egg-info/entry_points.txt
+[0.766s] writing requirements to fastbev_ros.egg-info/requires.txt
+[0.766s] writing top-level names to fastbev_ros.egg-info/top_level.txt
+[0.768s] reading manifest file 'fastbev_ros.egg-info/SOURCES.txt'
+[0.770s] writing manifest file 'fastbev_ros.egg-info/SOURCES.txt'
+[0.771s] running build_ext
+[0.771s] Creating /home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages/fastbev-ros.egg-link (link to .)
+[0.772s] Installing fastbev script to /home/kenta/ros2_ws/install/fastbev_ros/lib/fastbev_ros
+[0.772s] 
+[0.772s] Installed /home/kenta/ros2_ws/build/fastbev_ros
+[0.772s] running symlink_data
+[0.773s] error: can't copy '/home/kenta/ros2_ws/build/fastbev_ros/data/nuscenes/sweeps': doesn't exist or not a regular file
+[0.789s] Invoked command in '/home/kenta/ros2_ws/build/fastbev_ros' returned '1': CONDA_PROMPT_MODIFIER=(fastbev_ros_py310) PYTHONPATH=/home/kenta/ros2_ws/build/fastbev_ros/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kenta/ros2_ws/install/fastbev_ros/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/kenta/ros2_ws/build/fastbev_ros/build --no-deps symlink_data
