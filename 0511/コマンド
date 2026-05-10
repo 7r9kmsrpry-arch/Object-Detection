@@ -1,0 +1,2 @@
+trtexec   --onnx=./onnx/fastbev.onnx   --saveEngine=./engine/fastbev_fp16.engine   --fp16   --memPoolSize=workspace:4G   --skipInference   --verbose
+trtexec   --onnx=./onnx/fastbev_4d.onnx   --saveEngine=./engine/fastbev_4d_fp16.engine   --fp16   --memPoolSize=workspace:4G   --skipInference   --verbose
